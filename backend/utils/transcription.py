@@ -10,17 +10,20 @@ import shutil
 import aiohttp
 import asyncio
 from typing import List, Tuple
+import httpx
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+load_dotenv(override=True)
+http_client = httpx.Client(timeout=60.0)
 
 client = AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     api_version=os.getenv("AZURE_OPENAI_API_VERSION_WHISPER"),
-    azure_endpoint=os.getenv("AZURE_OPENAI_BASE_URL")
+    azure_endpoint=os.getenv("AZURE_OPENAI_BASE_URL"),
+    http_client=http_client
 )
 
 MAX_SIZE = 25 * 1024 * 1024  # 25MB in bytes

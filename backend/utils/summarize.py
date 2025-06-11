@@ -4,14 +4,17 @@ from db_control import crud
 from openai import AzureOpenAI
 import os
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
+http_client = httpx.Client(timeout=60.0)
 
 # Azure OpenAIの設定
 client = AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     api_version=os.getenv("AZURE_OPENAI_API_VERSION_CHAT", "2025-01-01-preview"),
-    azure_endpoint=os.getenv("AZURE_OPENAI_BASE_URL")
+    azure_endpoint=os.getenv("AZURE_OPENAI_BASE_URL"),
+    http_client=http_client
 )
 
 def validate_access_permissions(db: Session, transcript_id: str, user_id: str) -> None:

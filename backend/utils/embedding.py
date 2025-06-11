@@ -2,13 +2,16 @@ from openai import AzureOpenAI
 import os
 from dotenv import load_dotenv
 import json
+import httpx
 
-load_dotenv()
+load_dotenv(override=True)
+http_client = httpx.Client(timeout=60.0)
 
 client = AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     api_version=os.getenv("AZURE_OPENAI_API_VERSION_EMBED"),
-    azure_endpoint=os.getenv("AZURE_OPENAI_BASE_URL")
+    azure_endpoint=os.getenv("AZURE_OPENAI_BASE_URL"),
+    http_client=http_client
 )
 
 async def generate_embedding(text: str) -> str:
