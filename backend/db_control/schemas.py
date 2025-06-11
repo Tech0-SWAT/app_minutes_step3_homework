@@ -110,3 +110,25 @@ class ChatStartRequest(BaseModel):
 class ChatStartResponse(BaseModel):
     is_embedded: bool
     session_id: Optional[str] = None
+
+class MinutesListItem(BaseModel):
+    minutes_id: int
+    title: str
+    image_url: Optional[str] = None
+    created_at: datetime
+
+class MinutesListResponse(BaseModel):
+    minutes: List[MinutesListItem]
+
+class ChatMessageItem(BaseModel):
+    message_id: int
+    role: str
+    message: str
+    created_at: datetime
+
+class MinutesDetailResponse(BaseModel):
+    video_url: str
+    transcript_content: str
+    summary: Optional[str] = None
+    session_id: Optional[int] = None
+    messages: Optional[List[ChatMessageItem]] = None

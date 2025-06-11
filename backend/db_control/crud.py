@@ -6,6 +6,7 @@ import uuid
 import os
 from datetime import datetime
 import logging
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ def get_summary_by_transcript_id(db: Session, transcript_id: str):
 
 def create_summary(db: Session, transcript_id: str, content: str):
     """
-    サマリーを作成
+    サマリーを作成し、文字起こしのis_summariedフラグを更新する
     """
     try:
         # 既存のサマリーを確認
@@ -157,6 +158,14 @@ def create_summary(db: Session, transcript_id: str, content: str):
         if existing_summary:
             logger.info(f"既存のサマリーが見つかりました: summary_id={existing_summary.id}")
             return existing_summary
+
+        # 文字起こしデータを取得してis_summariedフラグを更新
+        transcript = get_transcript_by_id(db, transcript_id)
+        if not transcript:
+            logger.error(f"文字起こしデータが見つかりません: transcript_id={transcript_id}")
+            raise ValueError(f"文字起こしデータが見つかりません: transcript_id={transcript_id}")
+        
+        transcript.is_summaried = True
 
         # 新しいサマリーを作成
         summary = models.Summary(
@@ -166,7 +175,7 @@ def create_summary(db: Session, transcript_id: str, content: str):
         db.add(summary)
         db.commit()
         db.refresh(summary)
-        logger.info(f"新しいサマリーを作成しました: summary_id={summary.id}")
+        logger.info(f"新しいサマリーを作成し、is_summariedフラグを更新しました: summary_id={summary.id}")
         return summary
     except IntegrityError as e:
         db.rollback()
@@ -294,3 +303,75 @@ def update_summary(db: Session, transcript_id: int, content: str) -> models.Summ
         db.commit()
         db.refresh(summary)
     return summary
+
+def get_all_minutes_by_user_id(db: Session, user_id: str):
+    """
+    ユーザーIDに紐づく全ての議事録を取得する
+    
+    Args:
+        db (Session): データベースセッション
+        user_id (str): ユーザーID
+        
+    Returns:
+        List[Tuple[Minutes, str]]: 議事録とサムネイル画像URLのタプルのリスト
+    """
+    # 議事録と動画を結合して取得
+    results = db.query(
+        models.Minutes,
+        models.Video.image_url
+    ).outerjoin(
+        models.Video,
+        models.Minutes.id == models.Video.minutes_id
+    ).filter(
+        models.Minutes.user_id == user_id,
+        models.Minutes.is_deleted == False
+    ).order_by(
+        models.Minutes.created_at.desc()
+    ).all()
+    
+    return results
+
+def get_minutes_detail(db: Session, minutes_id: int, user_id: str):
+    """
+    議事録の詳細情報を取得する
+    
+    Args:
+        db (Session): データベースセッション
+        minutes_id (int): 議事録ID
+        user_id (str): ユーザーID
+        
+    Returns:
+        Tuple[Video, Transcript, Summary, ChatSession, List[ChatMessage]]: 
+            動画、文字起こし、要約、チャットセッション、チャットメッセージの情報
+    """
+    # 議事録の存在確認とアクセス権限チェック
+    minutes = get_minutes(db, minutes_id)
+    if not minutes:
+        raise ValueError("議事録が見つかりません")
+    if str(minutes.user_id) != str(user_id):
+        raise ValueError("この議事録へのアクセス権限がありません")
+    
+    # 動画情報を取得
+    video = get_video_by_minutes_id(db, minutes_id)
+    if not video:
+        raise ValueError("動画情報が見つかりません")
+    
+    # 文字起こし情報を取得
+    transcript = get_transcript_by_video_id(db, video.id)
+    if not transcript:
+        raise ValueError("文字起こし情報が見つかりません")
+    
+    # 要約情報を取得
+    summary = get_summary_by_transcript_id(db, transcript.id)
+    
+    # チャットセッションを取得
+    chat_session = get_chat_session_by_minutes_and_transcript(db, minutes_id, transcript.id)
+    
+    # チャットメッセージを取得（作成日時の昇順）
+    messages = []
+    if chat_session:
+        messages = db.query(models.ChatMessage).filter(
+            models.ChatMessage.session_id == chat_session.id
+        ).order_by(models.ChatMessage.created_at.asc()).all()
+    
+    return video, transcript, summary, chat_session, messages

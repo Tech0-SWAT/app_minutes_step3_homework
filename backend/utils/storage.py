@@ -18,17 +18,43 @@ blob_service_client = BlobServiceClient(
     credential=account_key
 )
 
+def extract_blob_name_from_url(url: str) -> str:
+    """
+    Azure Blob StorageのURLからブロブ名を抽出する
+    
+    Args:
+        url (str): Azure Blob StorageのURL
+        
+    Returns:
+        str: ブロブ名
+    """
+    # URLの例: https://accountname.blob.core.windows.net/container/blob_name?sas_token
+    # または: blob_name のみの場合もある
+    
+    if url.startswith("https://"):
+        # フルURLの場合、ブロブ名を抽出
+        parts = url.split("/")
+        if len(parts) >= 5:
+            blob_name = parts[-1].split("?")[0]  # SASトークンを除去
+            return blob_name
+    
+    # すでにブロブ名のみの場合はそのまま返す
+    return url.split("?")[0]  # SASトークンがある場合は除去
+
 def generate_sas_url(blob_name: str, container_name: str) -> str:
     """
     SASトークンを含むURLを生成する
     
     Args:
-        blob_name (str): ブロブ名
+        blob_name (str): ブロブ名またはフルURL
         container_name (str): コンテナ名
         
     Returns:
         str: SASトークンを含むURL
     """
+    # ブロブ名を抽出
+    actual_blob_name = extract_blob_name_from_url(blob_name)
+    
     # SASトークンの有効期限を設定（1時間）
     expiry = datetime.utcnow() + timedelta(hours=1)
     
@@ -36,14 +62,14 @@ def generate_sas_url(blob_name: str, container_name: str) -> str:
     sas_token = generate_blob_sas(
         account_name=account_name,
         container_name=container_name,
-        blob_name=blob_name,
+        blob_name=actual_blob_name,
         account_key=account_key,
         permission=BlobSasPermissions(read=True),
         expiry=expiry
     )
     
     # SASトークンを含むURLを生成
-    return f"https://{account_name}.blob.core.windows.net/{container_name}/{blob_name}?{sas_token}"
+    return f"https://{account_name}.blob.core.windows.net/{container_name}/{actual_blob_name}?{sas_token}"
 
 async def upload_video(video_file, minutes_id: int) -> str:
     """

@@ -11,6 +11,7 @@ import os
 from datetime import datetime
 import uuid
 import logging
+from pydantic import BaseModel
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
@@ -161,7 +162,7 @@ async def process_video(file_path: str, minutes_id: int, db: Session):
         except Exception as e:
             logger.error(f"一時ファイルの削除に失敗: {str(e)}")
 
-@router.get("/api/upload_status/", response_model=schemas.VideoUploadStatusResponse)
+@router.get("/api/upload_status", response_model=schemas.VideoUploadStatusResponse)
 def get_upload_status(
     minutes_id: int,
     user_id: str = Depends(get_current_user_id),
@@ -218,7 +219,7 @@ def get_upload_status(
             detail=error_message
         )
 
-@router.get("/api/upload_result/", response_model=schemas.VideoUploadResultResponse)
+@router.get("/api/upload_result", response_model=schemas.VideoUploadResultResponse)
 def get_upload_result(
     minutes_id: int,
     user_id: str = Depends(get_current_user_id),
@@ -274,8 +275,15 @@ def get_upload_result(
                 detail="文字起こしデータが見つかりません"
             )
         
-        # 動画のSAS URLを生成
-        video_url = storage.generate_sas_url(f"video_{minutes_id}.mp4", "video")
+        # 動画URLをSAS URLに変換
+        try:
+            video_url = storage.generate_sas_url(video.video_url, storage.container_name_video)
+        except Exception as e:
+            logger.error(f"動画URLのSAS URL生成中にエラーが発生: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail="動画URLの生成中にエラーが発生しました"
+            )
         
         return schemas.VideoUploadResultResponse(
             minutes_id=minutes_id,
@@ -294,6 +302,114 @@ def get_upload_result(
     except Exception as e:
         error_message = f"アップロード結果の取得中にエラーが発生しました: {str(e)}"
         logger.error(error_message)  # ログ出力
+        raise HTTPException(
+            status_code=500,
+            detail=error_message
+        )
+
+@router.get("/api/get_all_minutes", response_model=schemas.MinutesListResponse)
+async def get_all_minutes(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    ユーザーが作成した全ての議事録一覧を取得する
+    
+    Args:
+        user_id (str): 認証されたユーザーID
+        db (Session): データベースセッション
+        
+    Returns:
+        MinutesListResponse: 議事録一覧（各議事録に紐づく画像URLを含む）
+    """
+    try:
+        # 議事録一覧を取得
+        results = crud.get_all_minutes_by_user_id(db, user_id)
+        
+        # レスポンス用のデータを整形
+        minutes_list = []
+        
+        for minutes, video_image_url in results:
+            # 画像URLをSAS URLに変換
+            image_url = None
+            if video_image_url:
+                try:
+                    image_url = storage.generate_sas_url(video_image_url, storage.container_name_video)
+                except Exception as e:
+                    logger.error(f"画像URLのSAS URL生成中にエラーが発生: {str(e)}")
+            
+            minutes_list.append(schemas.MinutesListItem(
+                minutes_id=minutes.id,
+                title=minutes.title,
+                image_url=image_url,
+                created_at=minutes.created_at
+            ))
+        
+        return schemas.MinutesListResponse(
+            minutes=minutes_list
+        )
+        
+    except Exception as e:
+        error_message = f"議事録一覧の取得中にエラーが発生しました: {str(e)}"
+        logger.error(error_message)
+        raise HTTPException(
+            status_code=500,
+            detail=error_message
+        )
+
+@router.get("/api/get_minutes_list", response_model=schemas.MinutesDetailResponse)
+async def get_minutes_detail(
+    minutes_id: int,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    議事録の詳細情報を取得する
+    """
+    try:
+        # 議事録の詳細情報を取得
+        video, transcript, summary, chat_session, messages = crud.get_minutes_detail(
+            db, minutes_id, user_id
+        )
+        
+        # 動画URLをSAS URLに変換
+        try:
+            video_url = storage.generate_sas_url(video.video_url, storage.container_name_video)
+        except Exception as e:
+            logger.error(f"動画URLのSAS URL生成中にエラーが発生: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail="動画URLの生成中にエラーが発生しました"
+            )
+        
+        # チャットメッセージをレスポンス用に整形
+        message_items = None
+        if messages:
+            message_items = [
+                schemas.ChatMessageItem(
+                    message_id=msg.id,
+                    role=msg.role,
+                    message=msg.message,
+                    created_at=msg.created_at
+                ) for msg in messages
+            ]
+        
+        return schemas.MinutesDetailResponse(
+            video_url=video_url,
+            transcript_content=transcript.content,
+            summary=summary.content if summary else None,
+            session_id=chat_session.id if chat_session else None,
+            messages=message_items
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
+    except Exception as e:
+        error_message = f"議事録詳細の取得中にエラーが発生しました: {str(e)}"
+        logger.error(error_message)
         raise HTTPException(
             status_code=500,
             detail=error_message
