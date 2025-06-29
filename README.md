@@ -155,8 +155,15 @@ cd frontend
 ```bash
 npm install
 ```
+3. 環境変数の設定
+frontendに`.env`ファイルを作成し、以下の変数を設定：
+```
+NEXT_PUBLIC_SUPABASE_URL="your_supabase_url"
+NEXT_PUBLIC_SUPABASE_ANON_KEY=”your_supabase_key”
+FASTAPI_URL=http://127.0.0.1:8000
+```
 
-3. 開発サーバーの起動
+4. 開発サーバーの起動
 ```bash
 npm run dev
 ```
